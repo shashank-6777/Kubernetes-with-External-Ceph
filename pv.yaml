@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+ name: ceph-ext
+ namespace: test-apps
+ labels:
+   app: nginx
+spec:
+ storageClassName: rook-ceph-block-ext
+ accessModes:
+ - ReadWriteOnce
+ resources:
+   requests:
+    storage: 1Gi

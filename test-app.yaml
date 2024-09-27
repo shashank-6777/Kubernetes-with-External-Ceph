@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx-test
+  namespace: test-apps
+spec:
+  volumes:
+    - name: mystorage
+      persistentVolumeClaim:
+        claimName: ceph-ext
+  containers:
+    - name: task-pv-container
+      image: nginx:latest
+      ports:
+        - containerPort: 80
+          name: "http-server"
+      volumeMounts:
+        - mountPath: "/usr/share/nginx/html"
+          name: mystorage

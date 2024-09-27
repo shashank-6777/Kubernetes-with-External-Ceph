@@ -412,6 +412,51 @@ ceph config set global mon_allow_pool_delete true
 
 # Install Rook operator
 
+In order to configure the Ceph storage cluster, at least one of these local storage options are required:
+
+Raw devices (no partitions or formatted filesystems)
+
+Raw partitions (no formatted filesystem)
+LVM Logical Volumes (no formatted filesystem)
+
+Persistent Volumes available from a storage class in block mode
+
+You can confirm whether your partitions or devices are formatted with filesystems with the following command.
+
+```bash
+root@worker01:~# lsblk -f
+NAME                      FSTYPE      FSVER    LABEL UUID                                   FSAVAIL FSUSE% MOUNTPOINTS
+sr0                                                                                                        
+nbd0                                                                                                       
+nbd1                                                                                                       
+nbd2                                                                                                       
+nbd3                                                                                                       
+nbd4                                                                                                       
+nbd5                                                                                                       
+nbd6                                                                                                       
+nbd7                                                                                                       
+rbd0                                                                                         957.4M     0% /var/lib/kubelet/pods/74ba53d9-7f9c-49ec-8fe9-278e56288742/volumes/kubernetes.io~csi/pvc-647ee025-fd1f-4e8c-85a2-9c4505e82f34/mount
+                                                                                                           /var/lib/kubelet/plugins/kubernetes.io/csi/rook-ceph.rbd.csi.ceph.com/2f
+                                                                                                           21ff2b77680fab66a405dfd3fa8e574689572fd20748bff66fa5e1bf9b8cc5/globalmou
+                                                                                                           nt/0001-0012-rook-ceph-external-0000000000000003-ff39cfa8-5a41-46fb-ae17
+                                                                                                           -250c81aa5767
+vda                                                                                                        
+├─vda1                    vfat        FAT32          4F44-6F59                                   1G     1% /boot/efi
+├─vda2                    ext4        1.0            7d0a740e-bc54-4560-9e0f-16bdf5eff1a5      1.7G     5% /boot
+└─vda3                    LVM2_member LVM2 001       lqw3S7-RKqu-aIf1-rGra-TgPU-5QMO-E8FJtm                
+  └─ubuntu--vg-ubuntu--lv ext4        1.0            bce34e83-8271-47af-9666-a1c37eb4e4ab     14.5G    43% /var/lib/kubelet/pods/d0ca8a14-11ac-4e20-82b4-2af85a82158c/volume-subpaths/hubble-ui-nginx-conf/frontend/0
+                                                                                                           /
+vdb                                                                                                        
+nbd8                                                                                                       
+nbd9                                                                                                       
+nbd10                                                                                                      
+nbd11                                                                                                      
+nbd12                                                                                                      
+nbd13                                                                                                      
+nbd14                                                                                                      
+nbd15                                                                                                      
+root@worker01:~# 
+```
 
 ```bash
 shashank@Mac Ceph % git clone --single-branch --branch v1.15.2 https://github.com/rook/rook.git
@@ -581,6 +626,10 @@ total_space      30 GiB
 root@ceph01:~# 
 ```
 
+
+## Reference
+
+https://rook.io/docs/rook/v1.10/CRDs/Cluster/external-cluster/#external-configuration
 
 ## Authors
 

@@ -410,4 +410,179 @@ to allow pool deletion
 ceph config set global mon_allow_pool_delete true
 ```
 
+# Install Rook operator
+
+
+```bash
+shashank@Mac Ceph % git clone --single-branch --branch v1.15.2 https://github.com/rook/rook.git
+shashank@Mac rook % cd /rook/deploy/examples 
+shashank@Mac examples % 
+shashank@Mac examples % kubectl create -f crds.yaml -f common.yaml -f operator.yaml
+```
+Get the FSID and other details needed for the helper script from the ceph cluster
+```bash
+ceph health
+ceph fsid
+ceph auth get-key client.admin
+ceph status (to get monitor ip/hostname)
+```
+Set the env variables
+```bash
+shashank@Mac examples % export NAMESPACE=rook-ceph-external
+shashank@Mac examples % export ROOK_EXTERNAL_FSID=0640e0d6-7c49-11ef-bfe8-26f3c4275220
+shashank@Mac examples % export ROOK_EXTERNAL_ADMIN_SECRET=AQC2yfVmgBBvLhAAcdTqbh9HOAXPxaNeFTfKMg==
+shashank@Mac examples % export ROOK_EXTERNAL_CEPH_MON_DATA=a=192.168.0.30:6789
+```
+Please test if there is connectivity from your K8s cluster to Ceph cluster
+```bash
+root@master01:~# 
+root@master01:~# cat < /dev/tcp/192.168.0.30/3300
+ceph v2
+^C
+root@master01:~#
+```
+After setting the above environment variables apply the common-external.yaml to create the rook-ceph-external namespace and other RBAC bindings
+```bash
+shashank@Mac examples % kubectl create -f common-external.yaml                     
+namespace/rook-ceph-external created
+rolebinding.rbac.authorization.k8s.io/rook-ceph-cluster-mgmt created
+rolebinding.rbac.authorization.k8s.io/rook-ceph-cmd-reporter created
+serviceaccount/rook-ceph-cmd-reporter created
+serviceaccount/rook-ceph-default created
+role.rbac.authorization.k8s.io/rook-ceph-cmd-reporter created
+shashank@Mac examples % 
+```
+Use the helper to create the configmaps and secrets from env data
+```bash
+shashank@Mac examples % bash import-external-cluster.sh 
+cluster namespace rook-ceph-external already exists
+secret/rook-ceph-mon created
+configmap/rook-ceph-mon-endpoints created
+configmap/external-cluster-user-command created
+shashank@Mac examples % 
+```
+#### Rook will complain about empty ceph user name follow this workaround https://github.com/rook/rook/issues/5732#issuecomment-756042524 before doing the next step (if the bug is still open)
+
+remove the empty fields ceph-secret and ceph-username: (do this before applying cluster-external.yaml)
+```bash
+shashank@Mac-398 .kube % kubectl edit secret -n rook-ceph-external             
+secret/rook-ceph-mon edited
+shashank@Mac-398 .kube % 
+
+```
+After this create the external cluster
+```bash
+shashank@Mac examples % kubectl create -f cluster-external.yaml                    
+cephcluster.ceph.rook.io/rook-ceph-external created
+shashank@Mac examples %
+```
+Check if the cluster is Connected
+
+```bash
+shashank@Mac examples % kubectl get cephcluster -A                                                
+NAMESPACE            NAME                 DATADIRHOSTPATH   MONCOUNT   AGE   PHASE       MESSAGE                          HEALTH        EXTERNAL   FSID
+rook-ceph-external   rook-ceph-external                                7s    Connected   Cluster connected successfully   HEALTH_WARN   true       0640e0d6-7c49-11ef-bfe8-26f3c4275220
+shashank@Mac examples %
+
+```
+Before you create a Storage Class a pool has to be created in the external ceph cluster
+
+```bash
+root@ceph01:~# rados df
+POOL_NAME     USED  OBJECTS  CLONES  COPIES  MISSING_ON_PRIMARY  UNFOUND  DEGRADED  RD_OPS      RD  WR_OPS       WR  USED COMPR  UNDER COMPR
+.mgr       452 KiB        2       0       2                   0        0         0     106  91 KiB     127  1.6 MiB         0 B          0 B
+rbd          8 KiB        4       0       4                   0        0         0      37  29 KiB       5    5 KiB         0 B          0 B
+
+total_objects    6
+total_used       872 MiB
+total_avail      29 GiB
+total_space      30 GiB
+root@ceph01:~# 
+
+```
+create a test Ceph pool in external Ceph limited to 1 GB.
+
+```bash
+root@ceph01:~# ceph osd pool create test 128
+pool 'test' created
+root@ceph01:~# 
+root@ceph01:~# ceph osd lspools
+1 .mgr
+2 rbd
+3 test
+root@ceph01:~# ceph osd pool set test size 1 --yes-i-really-mean-it
+set pool 3 size to 1
+root@ceph01:~# 
+root@ceph01:~# 
+root@ceph01:~# ceph osd pool stats
+pool .mgr id 1
+  nothing is going on
+
+pool rbd id 2
+  nothing is going on
+
+pool test id 3
+  nothing is going on
+root@ceph01:~#
+```
+Create a StorageClass
+```bash
+shashank@Mac-398 Ceph % kubectl create -f storage-class.yaml 
+storageclass.storage.k8s.io/rook-ceph-block-ext created
+shashank@Mac-398 Ceph %
+```
+Create a PersistentVolumeClaim
+```bash
+shashank@Mac-398 Ceph % kubectl create -f pv.yaml
+persistentvolumeclaim/ceph-ext created
+shashank@Mac-398 Ceph % 
+```
+see the Used size increase in your external Ceph pool
+```bash
+root@ceph01:~# rados df
+POOL_NAME     USED  OBJECTS  CLONES  COPIES  MISSING_ON_PRIMARY  UNFOUND  DEGRADED  RD_OPS      RD  WR_OPS       WR  USED COMPR  UNDER COMPR
+.mgr       452 KiB        2       0       2                   0        0         0     106  91 KiB     127  1.6 MiB         0 B          0 B
+rbd          8 KiB        4       0       4                   0        0         0      37  29 KiB       5    5 KiB         0 B          0 B
+test         8 KiB        6       0       6                   0        0         0      33  26 KiB       8    8 KiB         0 B          0 B
+
+total_objects    12
+total_used       893 MiB
+total_avail      29 GiB
+total_space      30 GiB
+root@ceph01:~# 
+```
+let’s use the PV in a Pod
+```bash
+shashank@Mac-398 Ceph % kubectl create -f test-app.yaml 
+pod/nginx-test created
+shashank@Mac-398 Ceph % 
+```
+Login to the Pod and add some data to the PersistentVolumeClaim
+```bash
+shashank@Mac-398 Ceph % kubectl -n test-apps exec -it nginx-test -- bash  
+root@nginx-test:/# echo 'Hello Test Ceph External Storage' >> usr/share/nginx/html/index.html
+root@nginx-test:/# curl http://localhost/
+Hello Test Ceph External Storage
+root@nginx-test:/# 
+root@nginx-test:/# 
+```
+You can see that the external cluster has increased
+```bash
+root@ceph01:~# rados df
+POOL_NAME     USED  OBJECTS  CLONES  COPIES  MISSING_ON_PRIMARY  UNFOUND  DEGRADED  RD_OPS       RD  WR_OPS       WR  USED COMPR  UNDER COMPR
+.mgr       452 KiB        2       0       2                   0        0         0     106   91 KiB     127  1.6 MiB         0 B          0 B
+rbd          8 KiB        4       0       4                   0        0         0      37   29 KiB       5    5 KiB         0 B          0 B
+test       616 KiB       13       0      13                   0        0         0     455  4.0 MiB      34  664 KiB         0 B          0 B
+
+total_objects    19
+total_used       894 MiB
+total_avail      29 GiB
+total_space      30 GiB
+root@ceph01:~# 
+```
+
+
+## Authors
+
+[@shashank-linkedin](https://linkedin.com/in/shashank-sharma-137002124)
 
